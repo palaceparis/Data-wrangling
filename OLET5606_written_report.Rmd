@@ -1,0 +1,235 @@
+---
+title: "Data Wrangling - Project"
+subtitle: "Preliminary analyes on MYC dataset"
+author: "Tony"
+date: 
+output:
+  bookdown::html_document2:
+    number_sections: yes
+    self_contained: yes
+    theme: flatly  # Style sheet (eg colour and font)
+    css: 
+      - https://use.fontawesome.com/releases/v5.0.6/css/all.css
+    toc: true  # Table of contents
+    toc_depth: 3
+    toc_float: true
+    code_folding: hide
+bibliography: ["ref.bib"]
+biblio-style: apalike
+link-citations: true
+---
+<style>
+h2 { /* Header 2 */
+    font-size: 22px
+}
+</style>
+
+<style>
+h3 { /* Header 3 */
+    font-size: 18px
+}
+</style>
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(tidy = FALSE, 
+                      message = FALSE,
+                      warning = FALSE,
+                      echo = TRUE, 
+                      fig.width=8,
+                      fig.height=6,
+                      fig.align = "center",
+                      fig.retina = 4)
+```
+
+```{r, message = F}
+library(tidyverse)
+library(skimr) 
+library(naniar) 
+library(kableExtra) 
+library(lubridate)
+library(plotly)
+library(janitor)
+library(scales)
+library(bookdown)
+raw = read_csv("MVC.csv") %>% clean_names()
+```
+
+# Executive Summary
+
+This report firstly introduces the provenance and source of MVC dataset which was used to answer two questions as to how frequencies of traffic collisions reacted to time, weekdays and months and what are top drivers of collisions in whole NYC and in each borough. Then, there is a brief overview of missing values  and, fortunately, the missing values did not impede our core analysis process. 
+
+Based on the dataset and our analysis, we suggest that the very start of evening commute hours (**4pm** to **5pm**) during summer and winter months (Dec, Jan and Feb) in NYC presented higher number of traffic collisions and so did the commute hours (**8am** to **9am** and **4pm** to **5pm**) during weekdays. In addition, *Driver distraction* is the main cause of car accidents but the inability to fulfill *Right of way rule* is also contributing increasing number of crashes in recent years.
+
+# Exploring the Dataset
+
+## Background
+
+This report was mainly prepared for people living in NYC who usually walk to work or commute on either bicycle or motor vehicle and, therefore, are exposed to potential danger of traffic collision. Some potential policy maker may also be able to find from this report some deficiencies which they can work on further in the future. Hopefully, everyone by reading this report can obtain some helpful insights in terms of, for instance, how traffic collision looks like from the perspective of time and date and what are main contributors of traffic accidents.
+
+## Data Provenance 
+The dataset (MVC) was originally acquired from OLET5606 Team. Except for being able to download this dataset, we have no permission to access the portal where this dataset was stored. 
+
+However, since the dataset was provided by the teaching team for teaching purpose and we were required to work on it and interpret our skills in data wrangling, there must be consistency embedded so that the dataset per se can be reliable in this sense.
+
+Such second-hand dataset is obviously subject to some potential changes made by the teaching team for the sake of simplicity or understandability for students with various education backgrounds.  For instance, this dataset only presents data listed in crash tables and leaves other two tables including *vehicles* table and *persons* table out, which might potentially expose our analysis to insufficient justification problems.
+
+## Domain Knowledge 
+
+MVC dataset, which was derived from the police report (MV104-AN), provides motor vehicle collisions in NYC. When someone is injured or killed or over $1000 was involved, the corresponding traffic collision will be recorded into MV104-AN by the Police Department. Several dates saw the progressive development of NYC traffic data collection. 
+
+In **April 1998**, TrafficStat was utilized to uniformly collect traffic data for NYPD precincts. In **the following year**, Traffic Accident Management System (TAMS) were implemented to collect data across NYC. Later in **March 2016**, the Police Department substituted TAMS with the new Finest Online Records Management System (FORMS) which allows data to be kept electronically, thereby facilitating traffic safety analyses. 
+
+There is reason to believe such dataset retrieved from MV104-AN is able to be employed to generate justifiable and reasonable analyses since the collection system has been continuously upgraded over years and well managed by the Police Department. But meanwhile some ethical challenges cannot be neglected. For example, the vehicle type records in the dataset may unnecessarily bring some negative brand effects to corresponding companies even though, most of the time, vehicles are not the root reason of a particular traffic collision. 
+
+As for limitations, there is an obvious lack of data on Vehicle Type Code columns and on how many vehicles were involved in each recorded traffic collision, which in turn makes the values in *Vehicle Type Code 1-5 columns* unhelpful in some analyses. Same problems arise in *Contributing Factor columns*. 
+
+Overall, this NYC dataset reports when and where a traffic collision occurred, how many people were either injured or killed and what modes of transport were involved in the crash. Further details about structure of this dataset could be found by the following `glimpse` function. 
+
+## Exploration of Missing Data 
+
+```{r}
+raw %>% glimpse() 
+```
+
+The `glimpse` function presents great amount of missing values in both **vehicle_type_code and** **contributing_factor_vehicle** columns. 
+
+```{r}
+raw_1 = select(raw, -c(vehicle_type_code_3, vehicle_type_code_4, vehicle_type_code_5))
+raw_2 = select(raw_1, -c(contributing_factor_vehicle_3, contributing_factor_vehicle_4, contributing_factor_vehicle_5))  
+```
+
+We then removed those variables. 
+
+```{r}
+data_1 = raw_2[1:10]
+data_2 = raw_2[11:23]
+```
+
+Since we are still limited by the large size of this dataset, the rest was divided into 2 dataframes in order to develop an overall picture of missing values.
+
+<details>
+  <summary style="color:#CBCBCB">Click to have a look at missing values in the first part</summary>
+```{r visone, echo=FALSE, eval=TRUE}
+#data_1 %>% vis_miss(warn_large_data = FALSE)
+data_1 = data_1 %>% select(-c(off_street_name))
+```
+</details> 
+
+<details>
+  <summary style="color:#CBCBCB">Click to have a look at missing values in the second part</summary>
+```{r vistwo, echo=FALSE, eval=TRUE}
+#data_2 %>% vis_miss(warn_large_data = FALSE)
+```
+</details>
+
+As was shown above, some columns including *street name* and *vehicle type* that are insignificant to our prospective analysis present much more missing values. Even though there was around 30.35% data missed in the *Borough* variable, the analysis was not greatly impacted thanks to the large size of this dataset.
+
+# Research Question 1 - How does time and months affect traffic crashes?
+
+```{r}
+raw = raw %>% 
+  mutate(crash_date = mdy(`crash_date`))
+raw = raw %>% 
+  mutate(weekday = weekdays(crash_date))
+raw = raw %>% 
+  mutate(month = month(crash_date))
+raw$month = month.abb[raw$month]
+raw$month = raw$month %>% 
+  ordered(levels=c("Jan", "Feb", "Mar", "Apr", 
+ "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"))
+raw = raw %>% 
+  mutate(hour = hour(crash_time))
+raw$weekday = raw$weekday %>% 
+  ordered(levels=c("Monday", "Tuesday", "Wednesday", "Thursday", 
+"Friday", "Saturday", "Sunday"))
+```
+
+@griswold2011visual conducted an empirical study in the United States to investigate the relationship among collision variables including time, day of the week and month of the year. They concluded that evening commute hours (**5pm** to **8pm**) in winter months presented higher number of traffic collision cases and the collisions in summer took place more frequently on weekends late evenings.
+
+```{r ss, fig.cap= "Traffic collisions by month of year and time of day"}
+  ggplotly(
+    raw %>% select(hour, month) %>% table() %>% as.data.frame() %>% 
+ ggplot() +
+  aes(x=month, y=hour, fill=Freq) %>%
+  geom_tile()+scale_fill_gradient(low="white", high="darkblue")
+)
+```
+
+However, our dataset presents a slightly different story. As is shown in Figure \@ref(fig:ss), the most dangerous time of a day was basically around **4pm** to **5pm** when there is an increasing number of people returning home from work. The fact that people are expected to have longer working hours in summer (July and Aug) should have contributed a more extensive range of collisions frequencies and put the peak time off later in the evening. 
+
+While more cases were indeed found during summer and even fall, still the intensity was mainly concentrated around 4pm to 5pm in both seasons.
+
+```{r r1week, fig.cap= "Traffic collisions by week and time of day"}
+ggplotly(
+  raw %>% select(hour, weekday) %>% table() %>% as.data.frame() %>% 
+ ggplot() +
+  aes(x=weekday, y=hour, fill=Freq) %>%
+  geom_tile()+scale_fill_gradient(low="white", high="darkblue")
+ )
+```
+
+As we approached the question from the perspective of a week, Figure \@ref(fig:r1week) shows weekends should not be the main concern. Instead, the intensity especially around **4pm** to **5pm** gradually increased with each passing weekday. Even though there was also higher number of collisions in the morning (**8am** to **9am**), it was relatively stable and significantly less than it in the afternoon throughout the weekday.
+
+Therefore, based on the data from 2012 to 2019 in NYC, we suggest the start of evening commute hours (**4pm** to **5pm**) during summer and winter months present relatively higher number of traffic collisions and, as expected, commute hours during weekdays (**8am** to **9am** and **4pm** to **5pm**), especially the latter one, should always be our concern. 
+
+Some policy makers might consider introducing further speed limits to evening commute hours particularly in winter months and during weekdays to improve traffic safety of NYC. Commuters could try avoiding the ‘dangerous’ time to travel by departing earlier. However, considering working time is not subjective to one’s preference, there could be much more to be done by the former stakeholder.  
+
+# Research Question 2 - What are the top causes of traffic collisons in NYC and in each borough?
+
+The Lipsig Firm -@lipsig published an article where 10 types of driver negligence were summarized. With the dataset stretching across 8 years starting from 2012, we would like to have a look at whether our analysis was consistent with the viewpoints in the article. It is worth noting that we only took account of values in the variable of *contributing_factor_vehicle_1* since data in this column was more compact than them in other columns.
+
+```{r r2nyc, fig.cap="Top 6 causes of traffic collisions in NYC"}
+hg = head(
+  raw %>% group_by(contributing_factor_vehicle_1) %>% drop_na(contributing_factor_vehicle_1) %>% summarise(count = n()) %>%ungroup() %>% 
+  as.data.frame() %>% 
+  arrange(desc(count))
+  )
+
+tt = ggplot(data=hg, aes(x= reorder(contributing_factor_vehicle_1, count), y = count, color= contributing_factor_vehicle_1))+
+  geom_bar(stat="identity", fill = "#093146") +
+  theme(axis.title.x = element_blank(),
+          axis.title.y = element_blank())+
+  coord_flip()
+ggplotly(tt, height = 400, width=800)
+```
+
+As Figure \@ref(fig:r2nyc) illustrates, the top 5 contributing factors (except for unspecified reasons) are slightly different from the list in the article even though *driver distraction* was still the main cause of traffic crashes. *Failure to yield right of way* has been a key driver of collisions over last few years and *vehicular* problems should not be neglected either.
+
+**How does this look like in each borough?**
+
+```{r r2bor, fig.cap= "Top 6 causes of traffic collisions in each borough"}
+hg = raw %>% group_by(borough, contributing_factor_vehicle_1) %>% drop_na(borough) %>% summarise(count = n()) %>%ungroup() %>% 
+  as.data.frame() %>% 
+  arrange(desc(count))
+
+hg = hg %>% arrange(desc(count)) %>% group_by(borough) %>% 
+  summarise(factor = head(contributing_factor_vehicle_1),
+            freq = head(count))
+tt = ggplot(data=hg, aes(x= reorder(factor, freq), y = freq, color= factor))+
+  geom_bar(stat="identity", fill = "#093146") +
+  facet_wrap(.~borough, scales = "free", ncol = 1)+
+  theme(axis.title.x = element_blank(),
+          axis.title.y = element_blank())+
+  coord_flip()
+ggplotly(tt, height = 800, width=1000)
+```
+
+
+Further, we rearranged the data and Figure \@ref(fig:r2bor) presents that, overall, contributing factors in each borough accord with that in the whole NYC with only few ‘outliers’ that were only serious in some particular boroughs while not for others such as *passing too closely* in Brooklyn, *improper turning* in Manhattan and *improper lane usage* in Queens.
+
+In conclusion, driver distraction is still main driver of car accidents but the inability to fulfill *right of way* rule is also resulting in more crashes in recent years. 
+
+The police department could refer to the above analysis and take some actions accordingly. For example, to improve the driver’s attention, more surveillance cameras or more striking signs could be implemented on some busy roads. Also, pedestrians or commuters are supposed to be more careful on roads of above boroughs especially in Manhattan where more car accidents took place due to driver's inattention.
+
+# Reflection on Data Wrangling
+
+## Basic data manipulation tools
+
+Some basic functions such as `select`, `mutate` and `arrange` are the foundation of answers to Research Question 1 and 2 since a *heatmap* does not make any sense without time-alike variables on either X or Y axis. `table` function was what I found by accident when conducting some research online and it is really helpful to get corresponding frequencies which were then put into the *heatmap*.
+
+## Data visualization
+
+The combination of `group_by`, `summarise`, `ggplot` and `facet_wrap` is the most important approach to data visualization in this report, especially for Research Question 2. `facet_wrap` proves its value when we expected to have a further look at the top causes of collisions in each borough. And we did find something novel that were ignored by the article we mentioned above. 
+
+# References
